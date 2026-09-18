@@ -3,11 +3,8 @@ const path  =  require('path')
 require('dotenv').config()
 
 
-const app = express()
-const PORT = process.env.PORT || 3000
 
-app.use(logger);
-app.use(express.json())
+const logger = require('./middleware/logger');
 
 /* importation des routes */
 const livreRoutes = require('./routes/livre.route')
@@ -15,6 +12,13 @@ const auteurRoutes = require('./routes/auteur.route')
 const adherentRoutes = require('./routes/adherent.route')
 const empruntRoutes = require('./routes/emprunt.route')
 const statistiqueRoutes = require('./routes/statistique.route')
+
+
+const app = express()
+const PORT = process.env.PORT || 3000
+
+app.use(logger);
+app.use(express.json())
 
 
 
