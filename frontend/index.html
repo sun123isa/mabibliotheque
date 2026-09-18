@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bibliothèque - Accueil</title>
+
+  <!-- Lucide Icons (CDN gratuit) -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+  <header>
+    <h1>Ma Bibliothèque</h1>
+    <p>Choisissez une section pour commencer</p>
+  </header>
+
+ 
+  <section class="cards">
+    <!-- Adhérent -->
+    <a href="pages/adherents.html" class="card adherent">
+      <i data-lucide="users"></i>
+      <span>Adhérent</span>
+    </a>
+
+    <!-- Emprunt -->
+    <a href="pages/emprunts.html" class="card emprunt">
+      <i data-lucide="book-open-check"></i>
+      <span>Emprunt</span>
+    </a>
+
+    <!-- Auteur -->
+    <a href="pages/auteurs.html" class="card auteur">
+      <i data-lucide="pen-tool"></i>
+      <span>Auteur</span>
+    </a>
+
+    <!-- Livre -->
+    <a href="pages/livres.html" class="card livre">
+      <i data-lucide="book"></i>
+      <span>Livre</span>
+    </a>
+  </section>
+
+  <hr>
+    <br><br>
+   <h2>Statistiques</h2>
+
+  <!-- ===== Statistiques ===== -->
+   <section class="stats-grid" id="stats-grid">
+    <article class="stat-card">
+      <h3>Total livres</h3>
+      <p id="stat-total-livres">—</p>
+    </article>
+
+    <article class="stat-card">
+      <h3>Total adhérents</h3>
+      <p id="stat-total-adherents">—</p>
+    </article>
+
+    <article class="stat-card">
+      <h3>Emprunts en cours</h3>
+      <p id="stat-emprunts-cours">—</p>
+    </article>
+
+    <article class="stat-card">
+      <h3>Emprunts en retard</h3>
+      <p id="stat-emprunts-retard">—</p>
+    </article>
+
+    <article class="stat-card wide">
+      <h3>Livre le plus emprunté</h3>
+      <p id="stat-livre-top">—</p>
+    </article>
+
+    <article class="stat-card wide">
+      <h3>Adhérent le plus actif</h3>
+      <p id="stat-adherent-top">—</p>
+    </article>
+  </section>
+
+  <script>
+    lucide.createIcons();
+
+    /* ====== Configuration API ====== */
+    const API_STATS = '/api/statistiques';
+
+    /* ====== Chargement des statistiques ====== */
+    async function loadStatistiques() {
+      try {
+        const res = await fetch(API_STATS);
+        if (!res.ok) throw new Error('Erreur chargement statistiques');
+
+        const data = await res.json();
+
+        /* --- Chiffres simples --- */
+        document.getElementById('stat-total-livres').textContent    = data.totalLivres ?? 0;
+        document.getElementById('stat-total-adherents').textContent = data.totalAdherents ?? 0;
+        document.getElementById('stat-emprunts-cours').textContent  = data.empruntsEnCours ?? 0;
+        document.getElementById('stat-emprunts-retard').textContent = data.empruntsEnRetard ?? 0;
+
+        /* --- Livre le plus emprunté --- */
+        const livreEl = document.getElementById('stat-livre-top');
+        if (data.livreLePlusEmprunte) {
+          const l = data.livreLePlusEmprunte;
+          livreEl.innerHTML = `
+            ${l.titre}
+            <small>
+              ${l.auteur} </br>${l.nombre_emprunts} emprunt${l.nombre_emprunts > 1 ? 's' : ''}
+            </small>
+          `;
+        } else {
+          livreEl.textContent = 'Aucun emprunt';
+        }
+
+        /* --- Adhérent le plus actif --- */
+        const adhEl = document.getElementById('stat-adherent-top');
+        if (data.adherentLePlusActif) {
+          const a = data.adherentLePlusActif;
+          adhEl.innerHTML = `
+            ${a.nom}
+            <small>
+              ${a.contact || '—'}  </br> ${a.nombre_emprunts} emprunt${a.nombre_emprunts > 1 ? 's' : ''}
+            </small>
+          `;
+        } else {
+          adhEl.textContent = 'Aucun emprunt';
+        }
+      } catch (err) {
+        console.error(err);
+        document.getElementById('stats-grid').innerHTML =
+          '<p class="empty-state">Erreur de chargement des statistiques.</p>';
+      }
+    }
+
+    /* ====== Initialisation ====== */
+    loadStatistiques();
+  </script>
+</body>
+</html>

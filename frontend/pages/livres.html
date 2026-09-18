@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bibliothèque - Livres</title>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- ✅ UN SEUL CSS pour tout le site -->
+  <link rel="stylesheet" href="../assets/css/style.css" />
+</head>
+<body>
+
+  <div class="page">
+
+    <header>
+      <h1>Livres</h1>
+      <p>Gérez le catalogue des livres de la bibliothèque</p>
+    </header>
+
+    <!-- ===== Formulaire ajout / modification ===== -->
+    <section class="form-card theme-livre">
+      <h2>
+        <i data-lucide="book-plus"></i>
+        <span id="form-title">Ajouter un livre</span>
+      </h2>
+
+      <form id="book-form">
+        <input type="hidden" id="book-id" />
+
+        <div class="form-grid">
+          <div class="form-group full">
+            <label for="titre">Titre</label>
+            <input type="text" id="titre" name="titre" placeholder="Ex : Les Misérables" required />
+          </div>
+
+          <div class="form-group">
+            <label for="auteur_id">Auteur</label>
+            <select id="auteur_id" name="auteur_id" required>
+              <option value="">Chargement...</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="annee_publication">Année de publication</label>
+            <input type="number" id="annee_publication" name="annee_publication" placeholder="Ex : 1862" min="0" max="2100" />
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="submit-btn">
+            <i data-lucide="check"></i>
+            <span id="submit-label">Ajouter</span>
+          </button>
+
+          <button type="button" class="btn btn-secondary" id="cancel-btn" hidden>
+            <i data-lucide="x"></i>
+            <span>Annuler</span>
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ===== Recherche ===== -->
+    <div class="search-bar">
+      <i data-lucide="search"></i>
+      <input type="text" id="search-input" placeholder="Rechercher un livre ou un auteur..." />
+    </div>
+
+    <!-- ===== Liste des livres ===== -->
+    <section>
+      <div class="list-header">
+        <h2>
+          <i data-lucide="library"></i>
+          Liste des livres
+        </h2>
+        <span class="count" id="book-count">0 livre</span>
+      </div>
+
+      <!-- ✅ classe .list (CSS unique) -->
+      <ul class="list" id="book-list">
+        <li class="empty-state">Chargement...</li>
+      </ul>
+
+      <!-- Pagination -->
+      <div class="pagination" id="pagination"></div>
+    </section>
+
+  </div>
+
+  <script>
+    /* ====== Configuration API ====== */
+    const API_LIVRES  = '/api/livres';
+    const API_AUTEURS = '/api/auteurs';
+    const LIMIT = 3;
+
+    /* ====== Références DOM ====== */
+    const listEl      = document.getElementById('book-list');
+    const countEl     = document.getElementById('book-count');
+    const form        = document.getElementById('book-form');
+    const formTitle   = document.getElementById('form-title');
+    const submitLabel = document.getElementById('submit-label');
+    const submitBtn   = document.getElementById('submit-btn');
+    const cancelBtn   = document.getElementById('cancel-btn');
+    const idInput     = document.getElementById('book-id');
+    const auteurSelect= document.getElementById('auteur_id');
+    const searchInput = document.getElementById('search-input');
+    const paginationEl= document.getElementById('pagination');
+
+    let auteursMap = {};
+    let currentPage = 1;
+    let currentQuery = '';
+    let searchTimeout;
+
+    lucide.createIcons();
+
+    /* ====== GET : charger les auteurs dans le select ====== */
+    async function loadAuteursOptions() {
+      try {
+        const res = await fetch(API_AUTEURS);
+        if (!res.ok) throw new Error('Erreur chargement auteurs');
+
+        const auteurs = await res.json();
+
+        auteursMap = {};
+        auteurSelect.innerHTML = '<option value="">-- Choisir un auteur --</option>';
+
+        auteurs.forEach(a => {
+          auteursMap[a.id] = a.nom;
+          const opt = document.createElement('option');
+          opt.value = a.id;
+          opt.textContent = a.nom;
+          auteurSelect.appendChild(opt);
+        });
+      } catch (err) {
+        console.error(err);
+        auteurSelect.innerHTML = '<option value="">Erreur de chargement</option>';
+      }
+    }
+
+    /* ====== Chargement liste (avec pagination + recherche) ====== */
+    async function loadLivres(page = 1, q = '') {
+      currentPage = page;
+      currentQuery = q;
+
+      try {
+        listEl.innerHTML = '<li class="empty-state">Chargement...</li>';
+
+        let url = `${API_LIVRES}?page=${page}&limit=${LIMIT}`;
+
+        if (q.trim() !== '') {
+          url = `${API_LIVRES}/search?q=${encodeURIComponent(q.trim())}&page=${page}&limit=${LIMIT}`;
+        }
+
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Erreur lors du chargement');
+
+        const json = await res.json();
+
+        /* Supporte les 2 formats : { data, pagination } OU tableau direct */
+        const livres     = Array.isArray(json) ? json : json.data;
+        const pagination = json.pagination || null;
+
+        renderList(livres);
+        renderPagination(pagination);
+      } catch (err) {
+        console.error(err);
+        listEl.innerHTML = '<li class="empty-state">Erreur de chargement des livres.</li>';
+        paginationEl.innerHTML = '';
+      }
+    }
+
+    /* ====== Rendu de la liste ====== */
+    function renderList(livres) {
+      listEl.innerHTML = '';
+
+      if (!livres || livres.length === 0) {
+        listEl.innerHTML = '<li class="empty-state">Aucun livre trouvé.</li>';
+        countEl.textContent = '0 livre';
+        return;
+      }
+
+      livres.forEach(l => {
+        const auteurNom = l.auteur_nom || auteursMap[l.auteur_id] || `Auteur #${l.auteur_id}`;
+        const statut    = (l.statut || 'disponible').toLowerCase();
+        const statutTxt = statut === 'emprunte' ? 'Emprunté' : 'Disponible';
+
+        const li = document.createElement('li');
+        li.className = 'item';                        // ✅ CSS unique
+        li.innerHTML = `
+          <div class="item-icon">
+            <i data-lucide="book"></i>
+          </div>
+
+          <div class="item-info">
+            <span class="title">${l.titre}</span>
+            <span class="meta">
+              <i data-lucide="pen-tool"></i> ${auteurNom}
+              ${l.annee_publication ? `<span class="sep">•</span> <i data-lucide="calendar"></i> ${l.annee_publication}` : ''}
+              <span class="sep">•</span>
+              <span class="badge ${statut}">${statutTxt}</span>
+            </span>
+          </div>
+
+          <div class="item-actions">
+            <button class="icon-btn edit" title="Modifier" data-id="${l.id}">
+              <i data-lucide="pencil"></i>
+            </button>
+            <button class="icon-btn delete" title="Supprimer" data-id="${l.id}">
+              <i data-lucide="trash-2"></i>
+            </button>
+          </div>
+        `;
+        listEl.appendChild(li);
+      });
+
+      countEl.textContent = `${livres.length} livre${livres.length > 1 ? 's' : ''}`;
+      lucide.createIcons();
+    }
+
+    /* ====== Rendu de la pagination ====== */
+    function renderPagination(pagination) {
+      paginationEl.innerHTML = '';
+
+      if (!pagination || pagination.totalPages <= 1) return;
+
+      const { page, totalPages } = pagination;
+
+      /* Précédent */
+      const prev = document.createElement('button');
+      prev.textContent = '‹';
+      prev.disabled = page === 1;
+      prev.addEventListener('click', () => loadLivres(page - 1, currentQuery));
+      paginationEl.appendChild(prev);
+
+      /* Pages */
+      for (let i = 1; i <= totalPages; i++) {
+        const btn = document.createElement('button');
+        btn.textContent = i;
+        if (i === page) btn.classList.add('active');
+        btn.addEventListener('click', () => loadLivres(i, currentQuery));
+        paginationEl.appendChild(btn);
+      }
+
+      /* Suivant */
+      const next = document.createElement('button');
+      next.textContent = '›';
+      next.disabled = page === totalPages;
+      next.addEventListener('click', () => loadLivres(page + 1, currentQuery));
+      paginationEl.appendChild(next);
+    }
+
+    /* ====== Recherche en direct ====== */
+    searchInput.addEventListener('input', e => {
+      clearTimeout(searchTimeout);
+      const q = e.target.value;
+
+      searchTimeout = setTimeout(() => {
+        loadLivres(1, q); // repart toujours de la page 1
+      }, 300);
+    });
+
+    /* ====== POST / PUT : soumission du formulaire ====== */
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+
+      const data = {
+        titre: document.getElementById('titre').value.trim(),
+        auteur_id: parseInt(document.getElementById('auteur_id').value, 10),
+        annee_publication: document.getElementById('annee_publication').value
+          ? parseInt(document.getElementById('annee_publication').value, 10)
+          : null
+      };
+
+      if (!data.auteur_id) {
+        alert('Merci de choisir un auteur.');
+        return;
+      }
+
+      const id = idInput.value;
+      const isEdit = Boolean(id);
+
+      const url    = isEdit ? `${API_LIVRES}/${id}` : API_LIVRES;
+      const method = isEdit ? 'PUT' : 'POST';
+
+      try {
+        submitBtn.disabled = true;
+
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        if (!res.ok) throw new Error('Erreur serveur');
+
+        resetForm();
+        await loadLivres(1, currentQuery);
+      } catch (err) {
+        console.error(err);
+        alert("Une erreur est survenue lors de l'enregistrement.");
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+
+    /* ====== Édition / Suppression (délégation) ====== */
+    listEl.addEventListener('click', async e => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+
+      const id = btn.dataset.id;
+
+      /* --- ÉDITION --- */
+      if (btn.classList.contains('edit')) {
+        try {
+          const res = await fetch(`${API_LIVRES}/${id}`);
+          if (!res.ok) throw new Error('Livre introuvable');
+
+          const l = await res.json();
+
+          idInput.value = l.id;
+          document.getElementById('titre').value = l.titre || '';
+          document.getElementById('auteur_id').value = l.auteur_id || '';
+          document.getElementById('annee_publication').value = l.annee_publication || '';
+
+          formTitle.textContent = "Modifier le livre";
+          submitLabel.textContent = 'Enregistrer';
+          cancelBtn.hidden = false;
+
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } catch (err) {
+          console.error(err);
+          alert('Impossible de charger le livre.');
+        }
+      }
+
+      /* --- SUPPRESSION --- */
+      if (btn.classList.contains('delete')) {
+        if (!confirm('Supprimer ce livre ?')) return;
+
+        try {
+          const res = await fetch(`${API_LIVRES}/${id}`, { method: 'DELETE' });
+          if (!res.ok) throw new Error('Erreur suppression');
+
+          await loadLivres(currentPage, currentQuery);
+        } catch (err) {
+          console.error(err);
+          alert('Une erreur est survenue lors de la suppression.');
+        }
+      }
+    });
+
+    /* ====== Annulation ====== */
+    cancelBtn.addEventListener('click', resetForm);
+
+    function resetForm() {
+      form.reset();
+      idInput.value = '';
+      formTitle.textContent = "Ajouter un livre";
+      submitLabel.textContent = 'Ajouter';
+      cancelBtn.hidden = true;
+    }
+
+    /* ====== Initialisation ====== */
+    (async () => {
+      await loadAuteursOptions();
+      await loadLivres(1, '');
+    })();
+  </script>
+</body>
+</html>

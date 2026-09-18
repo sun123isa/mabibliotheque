@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bibliothèque - Auteurs</title>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- ✅ UN SEUL CSS pour tout le site -->
+  <link rel="stylesheet" href="../assets/css/style.css" />
+</head>
+<body>
+
+  <div class="page">
+
+    <header>
+      <h1>Auteurs</h1>
+      <p>Gérez la liste des auteurs de la bibliothèque</p>
+    </header>
+
+    <!-- ===== Formulaire ajout / modification ===== -->
+    <section class="form-card theme-auteur">
+      <h2>
+        <i data-lucide="pen-tool"></i>
+        <span id="form-title">Ajouter un auteur</span>
+      </h2>
+
+      <form id="author-form">
+        <input type="hidden" id="author-id" />
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="nom">Nom</label>
+            <input type="text" id="nom" name="nom" placeholder="Ex : Victor Hugo" required />
+          </div>
+
+          <div class="form-group">
+            <label for="nationalite">Nationalité</label>
+            <input type="text" id="nationalite" name="nationalite" placeholder="Ex : Française" required />
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="submit-btn">
+            <i data-lucide="check"></i>
+            <span id="submit-label">Ajouter</span>
+          </button>
+
+          <button type="button" class="btn btn-secondary" id="cancel-btn" hidden>
+            <i data-lucide="x"></i>
+            <span>Annuler</span>
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ===== Liste des auteurs ===== -->
+    <section>
+      <div class="list-header">
+        <h2>
+          <i data-lucide="users"></i>
+          Liste des auteurs
+        </h2>
+        <span class="count" id="author-count">0 auteur</span>
+      </div>
+
+      <!-- ✅ classe .list (CSS unique) -->
+      <ul class="list" id="author-list">
+        <li class="empty-state">Chargement...</li>
+      </ul>
+    </section>
+
+  </div>
+
+  <script>
+    /* ====== Configuration API ====== */
+    const API_URL = '/api/auteurs';
+
+    /* ====== Références DOM ====== */
+    const listEl      = document.getElementById('author-list');
+    const countEl     = document.getElementById('author-count');
+    const form        = document.getElementById('author-form');
+    const formTitle   = document.getElementById('form-title');
+    const submitLabel = document.getElementById('submit-label');
+    const submitBtn   = document.getElementById('submit-btn');
+    const cancelBtn   = document.getElementById('cancel-btn');
+    const idInput     = document.getElementById('author-id');
+
+    lucide.createIcons();
+
+    /* ====== GET : charger la liste ====== */
+    async function loadAuteurs() {
+      try {
+        listEl.innerHTML = '<li class="empty-state">Chargement...</li>';
+
+        const res = await fetch(API_URL);
+        if (!res.ok) throw new Error('Erreur lors du chargement');
+
+        const auteurs = await res.json();
+        renderList(auteurs);
+      } catch (err) {
+        console.error(err);
+        listEl.innerHTML = '<li class="empty-state">Erreur de chargement des auteurs.</li>';
+      }
+    }
+
+    /* ====== Rendu de la liste ====== */
+    function renderList(auteurs) {
+      listEl.innerHTML = '';
+
+      if (!auteurs || auteurs.length === 0) {
+        listEl.innerHTML = '<li class="empty-state">Aucun auteur enregistré pour le moment.</li>';
+        countEl.textContent = '0 auteur';
+        return;
+      }
+
+      auteurs.forEach(a => {
+        const li = document.createElement('li');
+        li.className = 'item';                        // ✅ CSS unique
+        li.innerHTML = `
+          <div class="item-icon">
+            <i data-lucide="pen-tool"></i>
+          </div>
+
+          <div class="item-info">
+            <span class="name">${a.nom}</span>
+            <span class="meta">
+              <i data-lucide="flag"></i> ${a.nationalite || '—'}
+            </span>
+          </div>
+
+          <div class="item-actions">
+            <button class="icon-btn edit" title="Modifier" data-id="${a.id}">
+              <i data-lucide="pencil"></i>
+            </button>
+            <button class="icon-btn delete" title="Supprimer" data-id="${a.id}">
+              <i data-lucide="trash-2"></i>
+            </button>
+          </div>
+        `;
+        listEl.appendChild(li);
+      });
+
+      countEl.textContent = `${auteurs.length} auteur${auteurs.length > 1 ? 's' : ''}`;
+      lucide.createIcons();
+    }
+
+    /* ====== POST / PUT : soumission du formulaire ====== */
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+
+      const data = {
+        nom: document.getElementById('nom').value.trim(),
+        nationalite: document.getElementById('nationalite').value.trim()
+      };
+
+      const id = idInput.value;
+      const isEdit = Boolean(id);
+
+      const url    = isEdit ? `${API_URL}/${id}` : API_URL;
+      const method = isEdit ? 'PUT' : 'POST';
+
+      try {
+        submitBtn.disabled = true;
+
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        if (!res.ok) throw new Error('Erreur serveur');
+
+        resetForm();
+        await loadAuteurs();
+      } catch (err) {
+        console.error(err);
+        alert("Une erreur est survenue lors de l'enregistrement.");
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+
+    /* ====== Édition / Suppression (délégation) ====== */
+    listEl.addEventListener('click', async e => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+
+      const id = btn.dataset.id;
+
+      /* --- ÉDITION --- */
+      if (btn.classList.contains('edit')) {
+        try {
+          const res = await fetch(`${API_URL}/${id}`);
+          if (!res.ok) throw new Error('Auteur introuvable');
+
+          const a = await res.json();
+
+          idInput.value = a.id;
+          document.getElementById('nom').value = a.nom;
+          document.getElementById('nationalite').value = a.nationalite || '';
+
+          formTitle.textContent = "Modifier l'auteur";
+          submitLabel.textContent = 'Enregistrer';
+          cancelBtn.hidden = false;
+
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } catch (err) {
+          console.error(err);
+          alert("Impossible de charger l'auteur.");
+        }
+      }
+
+      /* --- SUPPRESSION --- */
+      if (btn.classList.contains('delete')) {
+        if (!confirm('Supprimer cet auteur ?')) return;
+
+        try {
+          const res = await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
+          if (!res.ok) throw new Error('Erreur suppression');
+
+          await loadAuteurs();
+        } catch (err) {
+          console.error(err);
+          alert('Une erreur est survenue lors de la suppression.');
+        }
+      }
+    });
+
+    /* ====== Annulation ====== */
+    cancelBtn.addEventListener('click', resetForm);
+
+    function resetForm() {
+      form.reset();
+      idInput.value = '';
+      formTitle.textContent = "Ajouter un auteur";
+      submitLabel.textContent = 'Ajouter';
+      cancelBtn.hidden = true;
+    }
+
+    /* ====== Initialisation ====== */
+    loadAuteurs();
+  </script>
+</body>
+</html>

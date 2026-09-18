@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bibliothèque - Adhérents</title>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- ✅ UN SEUL CSS pour tout le site -->
+  <link rel="stylesheet" href="../assets/css/style.css" />
+</head>
+<body>
+
+  <div class="page">
+
+    <header>
+      <h1>Adhérents</h1>
+      <p>Gérez la liste des adhérents de la bibliothèque</p>
+    </header>
+
+    <!-- ===== Formulaire ajout / modification ===== -->
+    <section class="form-card theme-adherent">
+      <h2>
+        <i data-lucide="user-plus"></i>
+        <span id="form-title">Ajouter un adhérent</span>
+      </h2>
+
+      <form id="adherent-form">
+        <input type="hidden" id="adherent-id" />
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="nom">Nom</label>
+            <input type="text" id="nom" name="nom" placeholder="Ex : Jean Dupont" required />
+          </div>
+
+          <div class="form-group">
+            <label for="contact">Contact</label>
+            <input type="text" id="contact" name="contact" placeholder="Ex : 06 12 34 56 78" required />
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="submit-btn">
+            <i data-lucide="check"></i>
+            <span id="submit-label">Ajouter</span>
+          </button>
+
+          <button type="button" class="btn btn-secondary" id="cancel-btn" hidden>
+            <i data-lucide="x"></i>
+            <span>Annuler</span>
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ===== Liste des adhérents ===== -->
+    <section>
+      <div class="list-header">
+        <h2>
+          <i data-lucide="users"></i>
+          Liste des adhérents
+        </h2>
+        <span class="count" id="adherent-count">0 adhérent</span>
+      </div>
+
+      <!-- ✅ classe .list (CSS unique) -->
+      <ul class="list" id="adherent-list">
+        <li class="empty-state">Chargement...</li>
+      </ul>
+    </section>
+
+  </div>
+
+  <script>
+    /* ====== Configuration API ====== */
+    const API_URL = '/api/adherents';
+
+    /* ====== Références DOM ====== */
+    const listEl      = document.getElementById('adherent-list');
+    const countEl     = document.getElementById('adherent-count');
+    const form        = document.getElementById('adherent-form');
+    const formTitle   = document.getElementById('form-title');
+    const submitLabel = document.getElementById('submit-label');
+    const submitBtn   = document.getElementById('submit-btn');
+    const cancelBtn   = document.getElementById('cancel-btn');
+    const idInput     = document.getElementById('adherent-id');
+
+    lucide.createIcons();
+
+    /* ====== Utilitaire : initiales ====== */
+    function getInitials(nomComplet) {
+      if (!nomComplet) return '?';
+      const parts = nomComplet.trim().split(/\s+/);
+      if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+      return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+    }
+
+    /* ====== GET : charger la liste ====== */
+    async function loadAdherents() {
+      try {
+        listEl.innerHTML = '<li class="empty-state">Chargement...</li>';
+
+        const res = await fetch(API_URL);
+        if (!res.ok) throw new Error('Erreur lors du chargement');
+
+        const adherents = await res.json();
+        renderList(adherents);
+      } catch (err) {
+        console.error(err);
+        listEl.innerHTML = '<li class="empty-state">Erreur de chargement des adhérents.</li>';
+      }
+    }
+
+    /* ====== Rendu de la liste ====== */
+    function renderList(adherents) {
+      listEl.innerHTML = '';
+
+      if (!adherents || adherents.length === 0) {
+        listEl.innerHTML = '<li class="empty-state">Aucun adhérent enregistré pour le moment.</li>';
+        countEl.textContent = '0 adhérent';
+        return;
+      }
+
+      adherents.forEach(a => {
+        const li = document.createElement('li');
+        li.className = 'item';                        // ✅ CSS unique
+        li.innerHTML = `
+          <div class="avatar">${getInitials(a.nom)}</div>
+
+          <div class="item-info">
+            <span class="name">${a.nom}</span>
+            <span class="meta">
+              <i data-lucide="phone"></i> ${a.contact || '—'}
+            </span>
+          </div>
+
+          <div class="item-actions">
+            <button class="icon-btn edit" title="Modifier" data-id="${a.id}">
+              <i data-lucide="pencil"></i>
+            </button>
+            <button class="icon-btn delete" title="Supprimer" data-id="${a.id}">
+              <i data-lucide="trash-2"></i>
+            </button>
+          </div>
+        `;
+        listEl.appendChild(li);
+      });
+
+      countEl.textContent = `${adherents.length} adhérent${adherents.length > 1 ? 's' : ''}`;
+      lucide.createIcons();
+    }
+
+    /* ====== POST / PUT : soumission du formulaire ====== */
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+
+      const data = {
+        nom: document.getElementById('nom').value.trim(),
+        contact: document.getElementById('contact').value.trim()
+      };
+
+      const id = idInput.value;
+      const isEdit = Boolean(id);
+
+      const url    = isEdit ? `${API_URL}/${id}` : API_URL;
+      const method = isEdit ? 'PUT' : 'POST';
+
+      try {
+        submitBtn.disabled = true;
+
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        if (!res.ok) throw new Error('Erreur serveur');
+
+        resetForm();
+        await loadAdherents();
+      } catch (err) {
+        console.error(err);
+        alert("Une erreur est survenue lors de l'enregistrement.");
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+
+    /* ====== Édition / Suppression (délégation) ====== */
+    listEl.addEventListener('click', async e => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+
+      const id = btn.dataset.id;
+
+      /* --- ÉDITION --- */
+      if (btn.classList.contains('edit')) {
+        try {
+          const res = await fetch(`${API_URL}/${id}`);
+          if (!res.ok) throw new Error('Adhérent introuvable');
+
+          const a = await res.json();
+
+          idInput.value = a.id;
+          document.getElementById('nom').value = a.nom || '';
+          document.getElementById('contact').value = a.contact || '';
+
+          formTitle.textContent = "Modifier l'adhérent";
+          submitLabel.textContent = 'Enregistrer';
+          cancelBtn.hidden = false;
+
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } catch (err) {
+          console.error(err);
+          alert("Impossible de charger l'adhérent.");
+        }
+      }
+
+      /* --- SUPPRESSION --- */
+      if (btn.classList.contains('delete')) {
+        if (!confirm('Supprimer cet adhérent ?')) return;
+
+        try {
+          const res = await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
+          if (!res.ok) throw new Error('Erreur suppression');
+
+          await loadAdherents();
+        } catch (err) {
+          console.error(err);
+          alert('Une erreur est survenue lors de la suppression.');
+        }
+      }
+    });
+
+    /* ====== Annulation ====== */
+    cancelBtn.addEventListener('click', resetForm);
+
+    function resetForm() {
+      form.reset();
+      idInput.value = '';
+      formTitle.textContent = "Ajouter un adhérent";
+      submitLabel.textContent = 'Ajouter';
+      cancelBtn.hidden = true;
+    }
+
+    /* ====== Initialisation ====== */
+    loadAdherents();
+  </script>
+</body>
+</html>

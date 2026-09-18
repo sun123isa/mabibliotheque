@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bibliothèque - Emprunts</title>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- ✅ UN SEUL CSS pour tout le site -->
+  <link rel="stylesheet" href="../assets/css/style.css" />
+</head>
+<body>
+
+  <div class="page">
+
+    <header>
+      <h1>Emprunts</h1>
+      <p>Gérez les emprunts et les retours de la bibliothèque</p>
+    </header>
+
+    <!-- ===== Formulaire de création ===== -->
+    <section class="form-card theme-emprunt">
+      <h2>
+        <i data-lucide="book-plus"></i>
+        <span>Nouvel emprunt</span>
+      </h2>
+
+      <form id="loan-form">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="adherent_id">Adhérent</label>
+            <select id="adherent_id" name="adherent_id" required>
+              <option value="">Chargement...</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="livre_id">Livre</label>
+            <select id="livre_id" name="livre_id" required>
+              <option value="">Chargement...</option>
+            </select>
+            <span class="form-info" id="livre-info"></span>
+          </div>
+
+          <div class="form-group">
+            <label for="date_emprunt">Date d'emprunt</label>
+            <input type="date" id="date_emprunt" name="date_emprunt" required />
+          </div>
+
+          <div class="form-group">
+            <label for="date_retour_prevue">Date de retour prévue</label>
+            <input type="date" id="date_retour_prevue" name="date_retour_prevue" required />
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="submit-btn">
+            <i data-lucide="check"></i>
+            <span>Enregistrer l'emprunt</span>
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ===== Filtres ===== -->
+    <div class="filters">
+      <button class="filter-btn active" data-filter="all">
+        <i data-lucide="list"></i> Tous
+      </button>
+      <button class="filter-btn" data-filter="en-cours">
+        <i data-lucide="clock"></i> En cours
+      </button>
+      <button class="filter-btn" data-filter="en-retard">
+        <i data-lucide="alert-triangle"></i> En retard
+      </button>
+    </div>
+
+    <!-- ===== Liste des emprunts ===== -->
+    <section>
+      <div class="list-header">
+        <h2>
+          <i data-lucide="book-open-check"></i>
+          Liste des emprunts
+        </h2>
+        <span class="count" id="loan-count">0 emprunt</span>
+      </div>
+
+      <!-- ✅ classe .list (CSS unique) -->
+      <ul class="list" id="loan-list">
+        <li class="empty-state">Chargement...</li>
+      </ul>
+    </section>
+
+  </div>
+
+  <script>
+    const API_EMPRUNTS  = '/api/emprunts';
+    const API_ADHERENTS = '/api/adherents';
+    const API_LIVRES    = '/api/livres';
+
+    const listEl         = document.getElementById('loan-list');
+    const countEl        = document.getElementById('loan-count');
+    const form           = document.getElementById('loan-form');
+    const submitBtn      = document.getElementById('submit-btn');
+    const adherentSelect = document.getElementById('adherent_id');
+    const livreSelect    = document.getElementById('livre_id');
+    const livreInfo      = document.getElementById('livre-info');
+    const dateEmprunt    = document.getElementById('date_emprunt');
+    const dateRetour     = document.getElementById('date_retour_prevue');
+
+    let adherentsMap = {};
+    let livresMap    = {};
+    let currentFilter = 'all';
+
+    lucide.createIcons();
+
+    function todayISO() {
+      return new Date().toISOString().split('T')[0];
+    }
+
+    dateEmprunt.value = todayISO();
+
+    /* ====== Charger adhérents + livres disponibles ====== */
+    async function loadSelects() {
+      try {
+        const [resA, resL] = await Promise.all([
+          fetch(API_ADHERENTS),
+          fetch(`${API_LIVRES}?limit=1000`)
+        ]);
+
+        /* --- Adhérents --- */
+        const adherents = await resA.json();
+        const listeA = Array.isArray(adherents) ? adherents : adherents.data || [];
+
+        adherentsMap = {};
+        adherentSelect.innerHTML = '<option value="">-- Choisir un adhérent --</option>';
+        listeA.forEach(a => {
+          adherentsMap[a.id] = a.nom;
+          const opt = document.createElement('option');
+          opt.value = a.id;
+          opt.textContent = `${a.nom} — ${a.contact || ''}`;
+          adherentSelect.appendChild(opt);
+        });
+
+        /* --- Livres (UNIQUEMENT les disponibles) --- */
+        const livresJson = await resL.json();
+        const listeL = Array.isArray(livresJson) ? livresJson : livresJson.data || [];
+
+        livresMap = {};
+        livreSelect.innerHTML = '<option value="">-- Choisir un livre --</option>';
+
+        const livresDisponibles = listeL.filter(
+          l => (l.statut || '').toLowerCase() === 'disponible'
+        );
+
+        if (livresDisponibles.length === 0) {
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.disabled = true;
+          opt.textContent = 'Aucun livre disponible';
+          livreSelect.appendChild(opt);
+          livreSelect.disabled = true;
+          submitBtn.disabled = true;
+
+          livreInfo.innerHTML = '<i data-lucide="info"></i> Tous les livres sont actuellement empruntés.';
+          lucide.createIcons();
+        } else {
+          livreSelect.disabled = false;
+          submitBtn.disabled = false;
+
+          livresDisponibles.forEach(l => {
+            livresMap[l.id] = l.titre;
+            const opt = document.createElement('option');
+            opt.value = l.id;
+            opt.textContent = `${l.titre}${l.auteur_nom ? ' — ' + l.auteur_nom : ''}`;
+            livreSelect.appendChild(opt);
+          });
+
+          livreInfo.innerHTML = `<i data-lucide="info"></i> ${livresDisponibles.length} livre${livresDisponibles.length > 1 ? 's' : ''} disponible${livresDisponibles.length > 1 ? 's' : ''}`;
+          lucide.createIcons();
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    /* ====== Charger les emprunts ====== */
+    async function loadEmprunts(filter = 'all') {
+      currentFilter = filter;
+
+      try {
+        listEl.innerHTML = '<li class="empty-state">Chargement...</li>';
+
+        let url = API_EMPRUNTS;
+        if (filter === 'en-cours')  url = `${API_EMPRUNTS}/en-cours`;
+        if (filter === 'en-retard') url = `${API_EMPRUNTS}/en-retard`;
+
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Erreur chargement');
+
+        const json = await res.json();
+        const emprunts = Array.isArray(json) ? json : json.data || [];
+
+        renderList(emprunts);
+      } catch (err) {
+        console.error(err);
+        listEl.innerHTML = '<li class="empty-state">Erreur de chargement des emprunts.</li>';
+      }
+    }
+
+    /* ====== Rendu de la liste ====== */
+    function renderList(emprunts) {
+      listEl.innerHTML = '';
+
+      if (!emprunts || emprunts.length === 0) {
+        listEl.innerHTML = '<li class="empty-state">Aucun emprunt à afficher.</li>';
+        countEl.textContent = '0 emprunt';
+        return;
+      }
+
+      const today = todayISO();
+
+      emprunts.forEach(e => {
+        const adherentNom = e.adherent_nom || adherentsMap[e.adherent_id] || `Adhérent #${e.adherent_id}`;
+        const livreTitre  = e.livre_titre  || e.livre || livresMap[e.livre_id] || `Livre #${e.livre_id}`;
+
+        let statut = 'en-cours';
+        let statutTxt = 'En cours';
+
+        if (e.date_retour) {
+          statut = 'rendu';
+          statutTxt = 'Rendu';
+        } else if (e.date_retour_prevue && e.date_retour_prevue < today) {
+          statut = 'retard';
+          statutTxt = 'En retard';
+        }
+
+        const datePrevue = e.date_retour_prevue
+          ? new Date(e.date_retour_prevue).toLocaleDateString('fr-FR')
+          : '—';
+        const dateEmp = e.date_emprunt
+          ? new Date(e.date_emprunt).toLocaleDateString('fr-FR')
+          : '—';
+
+        const li = document.createElement('li');
+        li.className = 'item';                        // ✅ CSS unique
+        li.innerHTML = `
+          <div class="item-icon">
+            <i data-lucide="book-open-check"></i>
+          </div>
+
+          <div class="item-info">
+            <span class="title">${livreTitre}</span>
+            <span class="meta">
+              <i data-lucide="user"></i> ${adherentNom}
+              <span class="sep">•</span>
+              <i data-lucide="calendar"></i> ${dateEmp}
+              <span class="sep">•</span>
+              <i data-lucide="calendar-clock"></i> Prévu : ${datePrevue}
+              <span class="sep">•</span>
+              <span class="badge ${statut}">${statutTxt}</span>
+            </span>
+          </div>
+
+          <div class="item-actions">
+            ${!e.date_retour ? `
+              <button class="icon-btn return" title="Marquer comme rendu" data-id="${e.id}">
+                <i data-lucide="check-circle"></i>
+              </button>
+            ` : ''}
+          </div>
+        `;
+        listEl.appendChild(li);
+      });
+
+      countEl.textContent = `${emprunts.length} emprunt${emprunts.length > 1 ? 's' : ''}`;
+      lucide.createIcons();
+    }
+
+    /* ====== POST : créer un emprunt ====== */
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+
+      const data = {
+        adherent_id: parseInt(adherentSelect.value, 10),
+        livre_id:    parseInt(livreSelect.value, 10),
+        date_emprunt: dateEmprunt.value,
+        date_retour_prevue: dateRetour.value
+      };
+
+      if (!data.adherent_id || !data.livre_id) {
+        alert('Merci de choisir un adhérent et un livre.');
+        return;
+      }
+
+      if (data.date_retour_prevue < data.date_emprunt) {
+        alert('La date de retour prévue doit être après la date d\'emprunt.');
+        return;
+      }
+
+      try {
+        submitBtn.disabled = true;
+
+        const res = await fetch(API_EMPRUNTS, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message || 'Erreur serveur');
+        }
+
+        form.reset();
+        dateEmprunt.value = todayISO();
+
+        await loadSelects();
+        await loadEmprunts(currentFilter);
+      } catch (err) {
+        console.error(err);
+        alert("Erreur lors de la création de l'emprunt : " + err.message);
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+
+    /* ====== Retour d'un emprunt ====== */
+    listEl.addEventListener('click', async e => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+
+      if (btn.classList.contains('return')) {
+        const id = btn.dataset.id;
+        if (!confirm('Confirmer le retour de ce livre ?')) return;
+
+        try {
+          const res = await fetch(`${API_EMPRUNTS}/${id}/retour`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' }
+          });
+
+          if (!res.ok) throw new Error('Erreur retour');
+
+          await loadSelects();
+          await loadEmprunts(currentFilter);
+        } catch (err) {
+          console.error(err);
+          alert('Impossible d\'enregistrer le retour.');
+        }
+      }
+    });
+
+    /* ====== Filtres ====== */
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        loadEmprunts(btn.dataset.filter);
+      });
+    });
+
+    /* ====== Initialisation ====== */
+    (async () => {
+      await loadSelects();
+      await loadEmprunts('all');
+    })();
+  </script>
+</body>
+</html>
